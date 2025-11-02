@@ -1,146 +1,93 @@
+// Fix: Implemented a mock server to provide API data.
 const express = require('express');
-const { Pool } = require('pg');
 const cors = require('cors');
-require('dotenv').config();
+const bodyParser = require('body-parser');
 
 const app = express();
-// Use the PORT from environment variables for Render, or default to 3001 for local dev
-const PORT = process.env.PORT || 3001; 
+const port = 3001;
 
-// --- Critical CORS Configuration ---
-// This tells the server to accept requests from your live frontend.
-const allowedOrigins = [
-  'https://calls.interactivebusinesssystems.com.au',
-  'http://localhost:5173' // for local development
+app.use(cors());
+app.use(bodyParser.json());
+
+// Mock Data
+const users = [
+  { id: '1', name: 'Admin User', email: 'admin@example.com', role: 'admin', phone: '123-456-7890', address: '123 Admin St, City, Country' },
+  { id: '2', name: 'Alice Johnson', email: 'alice@example.com', role: 'user', phone: '234-567-8901', address: '456 User Ave, City, Country' },
+  { id: '3', name: 'Bob Smith', email: 'bob@example.com', role: 'user', phone: '345-678-9012', address: '789 Member Rd, City, Country' },
+  { id: '4', name: 'Charlie Brown', email: 'charlie@example.com', role: 'user', phone: '456-789-0123', address: '101 Guest Ln, City, Country' },
 ];
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
+const callLogs = {
+  '2': Array.from({ length: 25 }, (_, i) => ({ id: `cl${i}`, userId: '2', date: new Date(Date.now() - i * 1000 * 60 * 60 * 24).toISOString(), from: `+1555${Math.floor(1000000 + Math.random() * 9000000)}`, to: `+1555${Math.floor(1000000 + Math.random() * 9000000)}`, duration: Math.floor(Math.random() * 300), status: ['Completed', 'Busy', 'No-Answer', 'Failed'][i % 4], cost: Math.random() * 2 })),
+  '3': Array.from({ length: 15 }, (_, i) => ({ id: `cl_bob_${i}`, userId: '3', date: new Date(Date.now() - i * 1000 * 60 * 60 * 12).toISOString(), from: `+1555${Math.floor(1000000 + Math.random() * 9000000)}`, to: `+1555${Math.floor(1000000 + Math.random() * 9000000)}`, duration: Math.floor(Math.random() * 500), status: ['Completed', 'No-Answer'][i % 2], cost: Math.random() * 3 })),
+  '4': [],
 };
 
-app.use(cors(corsOptions));
-app.use(express.json());
+const errorLogs = {
+  '2': Array.from({ length: 5 }, (_, i) => ({ id: `el${i}`, userId: '2', date: new Date(Date.now() - i * 1000 * 60 * 60 * 48).toISOString(), code: `E${400 + i}`, message: `Error message number ${i}` })),
+  '3': [],
+  '4': [],
+};
 
-// --- Database Connection ---
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // Required for Render's managed database
-  }
-});
+const messageLogs = {
+  '2': Array.from({ length: 18 }, (_, i) => ({ id: `ml${i}`, userId: '2', date: new Date(Date.now() - i * 1000 * 60 * 30).toISOString(), direction: ['inbound', 'outbound'][i % 2], from: `+1555${Math.floor(1000000 + Math.random() * 9000000)}`, to: `+1555${Math.floor(1000000 + Math.random() * 9000000)}`, body: `This is a sample message ${i}.`, status: ['Sent', 'Delivered', 'Received', 'Failed'][i % 4] })),
+  '3': [],
+  '4': [],
+};
 
-// --- API Endpoints ---
+const callRecordings = {
+  '2': Array.from({ length: 8 }, (_, i) => ({ id: `cr${i}`, userId: '2', callSid: `CA${'x'.repeat(32).replace(/x/g, () => (Math.random()*16|0).toString(16))}`, date: new Date(Date.now() - i * 1000 * 60 * 60 * 72).toISOString(), duration: Math.floor(Math.random() * 120), url: '#' })),
+  '3': [],
+  '4': [],
+};
 
-// Test endpoint
-app.get('/api', (req, res) => {
-  res.json({ message: 'Backend is running!' });
-});
+// Routes
 
-// Login endpoint
-app.post('/api/login', async (req, res) => {
+// Auth
+app.post('/api/login', (req, res) => {
   const { email, password } = req.body;
-  try {
-    const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1 AND password = $2',
-      [email, password]
-    );
-    if (result.rows.length > 0) {
-      res.json(result.rows[0]);
-    } else {
-      res.status(401).json({ error: 'Invalid credentials' });
-    }
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+  const user = users.find(u => u.email === email);
+  // In a real app, you'd check the password hash
+  if (user && password) { // Simple check for password existence
+    res.json(user);
+  } else {
+    res.status(401).json({ message: 'Invalid credentials' });
   }
 });
 
-// Get all users (for admin)
-app.get('/api/users', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM users ORDER BY "createdAt" DESC');
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Get users error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+// Users
+app.get('/api/users', (req, res) => {
+  res.json(users);
+});
+
+app.put('/api/users/:id', (req, res) => {
+  const { id } = req.params;
+  const updatedUserData = req.body;
+  const userIndex = users.findIndex(u => u.id === id);
+
+  if (userIndex !== -1) {
+    users[userIndex] = { ...users[userIndex], ...updatedUserData };
+    res.json(users[userIndex]);
+  } else {
+    res.status(404).json({ message: 'User not found' });
   }
 });
 
-// Add a user (for admin)
-app.post('/api/users', async (req, res) => {
-  const { id, name, email, password, role, companyName, contactNumber, accountSid, authToken } = req.body;
-  try {
-    const result = await pool.query(
-      'INSERT INTO users (id, name, email, password, role, "companyName", "contactNumber", "accountSid", "authToken") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [id, name, email, password, role, companyName, contactNumber, accountSid, authToken]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Add user error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+// Data fetching
+app.get('/api/users/:userId/call-logs', (req, res) => {
+  res.json(callLogs[req.params.userId] || []);
+});
+app.get('/api/users/:userId/error-logs', (req, res) => {
+  res.json(errorLogs[req.params.userId] || []);
+});
+app.get('/api/users/:userId/message-logs', (req, res) => {
+  res.json(messageLogs[req.params.userId] || []);
+});
+app.get('/api/users/:userId/call-recordings', (req, res) => {
+  res.json(callRecordings[req.params.userId] || []);
 });
 
 
-// Update a user
-app.put('/api/users/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, companyName, contactNumber, accountSid, authToken } = req.body;
-    try {
-        const result = await pool.query(
-            'UPDATE users SET name = $1, "companyName" = $2, "contactNumber" = $3, "accountSid" = $4, "authToken" = $5 WHERE id = $6 RETURNING *',
-            [name, companyName, contactNumber, accountSid, authToken, id]
-        );
-        if (result.rows.length > 0) {
-            res.json(result.rows[0]);
-        } else {
-            res.status(404).json({ error: 'User not found' });
-        }
-    } catch (err) {
-        console.error('Update user error:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-
-// Get data for a specific user
-const createUserDataEndpoint = (dataType, tableName) => {
-  app.get(`/api/users/:userId/${dataType}`, async (req, res) => {
-    const { userId } = req.params;
-    try {
-      const result = await pool.query(`SELECT * FROM ${tableName} WHERE "userId" = $1 ORDER BY date DESC`, [userId]);
-      // Manually map from_number and to_number for call logs and message logs to be consistent
-      if (tableName === 'call_logs' || tableName === 'message_logs') {
-        const mappedRows = result.rows.map(row => ({
-          ...row,
-          from: row.from_number,
-          to: row.to_number
-        }));
-         res.json(mappedRows);
-      }
-      else {
-        res.json(result.rows);
-      }
-    } catch (err) {
-      console.error(`Get ${dataType} error:`, err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  });
-};
-
-createUserDataEndpoint('call-logs', 'call_logs');
-createUserDataEndpoint('error-logs', 'error_logs');
-createUserDataEndpoint('message-logs', 'message_logs');
-createUserDataEndpoint('call-recordings', 'call_recordings');
-
-
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(port, () => {
+  console.log(`Mock API server listening at http://localhost:${port}`);
 });
