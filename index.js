@@ -72,14 +72,30 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+// Add a user (for admin)
+app.post('/api/users', async (req, res) => {
+  const { id, name, email, password, role, companyName, contactNumber, accountSid, authToken } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO users (id, name, email, password, role, "companyName", "contactNumber", "accountSid", "authToken") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+      [id, name, email, password, role, companyName, contactNumber, accountSid, authToken]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Add user error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 // Update a user
 app.put('/api/users/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, companyName, contactNumber } = req.body;
+    const { name, companyName, contactNumber, accountSid, authToken } = req.body;
     try {
         const result = await pool.query(
-            'UPDATE users SET name = $1, "companyName" = $2, "contactNumber" = $3 WHERE id = $4 RETURNING *',
-            [name, companyName, contactNumber, id]
+            'UPDATE users SET name = $1, "companyName" = $2, "contactNumber" = $3, "accountSid" = $4, "authToken" = $5 WHERE id = $6 RETURNING *',
+            [name, companyName, contactNumber, accountSid, authToken, id]
         );
         if (result.rows.length > 0) {
             res.json(result.rows[0]);
@@ -99,16 +115,9 @@ const createUserDataEndpoint = (dataType, tableName) => {
     const { userId } = req.params;
     try {
       const result = await pool.query(`SELECT * FROM ${tableName} WHERE "userId" = $1 ORDER BY date DESC`, [userId]);
-      // Manually map from_number and to_number for call logs
-      if (tableName === 'call_logs') {
+      // Manually map from_number and to_number for call logs and message logs to be consistent
+      if (tableName === 'call_logs' || tableName === 'message_logs') {
         const mappedRows = result.rows.map(row => ({
-          ...row,
-          from: row.from_number,
-          to: row.to_number
-        }));
-         res.json(mappedRows);
-      } else if (tableName === 'message_logs') {
-         const mappedRows = result.rows.map(row => ({
           ...row,
           from: row.from_number,
           to: row.to_number
@@ -135,3 +144,4 @@ createUserDataEndpoint('call-recordings', 'call_recordings');
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
