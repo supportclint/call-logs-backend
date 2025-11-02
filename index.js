@@ -144,4 +144,3 @@ createUserDataEndpoint('call-recordings', 'call_recordings');
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
